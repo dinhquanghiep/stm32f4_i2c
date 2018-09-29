@@ -1,0 +1,39 @@
+{
+  "configurations": [
+    {
+      "name": "Win32",
+      "includePath": [
+        "D:/Work/6._IDE/vcs/arm/lib/cmsis/cores",
+        "D:/Work/6._IDE/vcs/arm/lib/cmsis/variant",
+        "${workspaceFolder}/spl/inc",
+        "${workspaceFolder}/spl/src",
+        "${workspaceFolder}/inc",
+        "D:/Work/6._IDE/gcc-arm-none-eabi/arm-none-eabi/include"
+      ],
+      "defines": [
+        "STM32F4",
+        "STM32F407xx",
+        "STM32F40_41xxx",
+        "USE_STDPERIPH_DRIVER",
+        "_DEFAULT_SOURCE",
+        "HSE_VALUE=8000000"
+      ],
+      "intelliSenseMode": "clang-x64",
+      "compilerPath": "D:/Work/6._IDE/gcc-arm-none-eabi/bin/gcc-arm-none-eabi.exe",
+      "browse": {
+        "path": [
+          "D:/Work/6._IDE/vcs/arm/lib/cmsis/cores",
+          "D:/Work/6._IDE/vcs/arm/lib/cmsis/variant",
+          "${workspaceFolder}/spl/inc",
+          "${workspaceFolder}/spl/src",
+          "${workspaceFolder}/inc",
+          "D:/Work/6._IDE/gcc-arm-none-eabi/arm-none-eabi/include"
+        ],
+        "limitSymbolsToIncludedHeaders": true,
+        "databaseFilename": ""
+      },
+      "cStandard": "c99"
+    }
+  ],
+  "version": 4
+}
