@@ -24,6 +24,7 @@
 #include <stm32f4xx_dma.h>
 #include <stm32f4xx_usart.h>
 #include <stm32f4xx_i2c.h>
+#include <stm32f4xx_tim.h>
 #include <misc.h>
 #include <string.h>
 #if defined (__GNUC__)
@@ -104,6 +105,7 @@ uint32_t millis(void);
 static void gpio_config(void);
 static void dma_config(void);
 static void usart_config(void);
+static void timer_config(void);
 static void i2c_config(void);
 static void nvic_config(void);
 /* Public functions ----------------------------------------------------------*/
@@ -380,6 +382,30 @@ static void usart_config(void) {
   // USART_DMACmd(USART3, USART_DMAReq_Rx, ENABLE);
 }
 
+/** @brief  Config the Timer for receive time from DS1307
+  * @param  None
+  * 
+  * @retval None
+  */
+static void timer_config(void) {
+  RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
+  /** input clock: 42Mhz
+    * period: 1s
+    * prescale: 420000
+    * timer period: 1000 
+   */
+  TIM_TimeBaseInitTypeDef TIM_TimeBaseInitStruct;
+  TIM_TimeBaseStructInit(&TIM_TimeBaseInitStruct);
+  TIM_TimeBaseInitStruct.TIM_Prescaler = 419999;
+  TIM_TimeBaseInitStruct.TIM_CounterMode = TIM_CounterMode_Up;
+  TIM_TimeBaseInitStruct.TIM_Period = 999;
+  TIM_TimeBaseInitStruct.TIM_ClockDivision = TIM_CKD_DIV1;
+  TIM_TimeBaseInit(TIM2, &TIM_TimeBaseInitStruct);
+  
+  TIM_ITConfig(TIM2, TIM_IT_Update, ENABLE);
+  TIM_Cmd(TIM2, ENABLE);
+
+}
 /** @brief  Config the I2C
   * @param  None
   * 
@@ -433,6 +459,13 @@ static void nvic_config(void) {
   NVIC_InitStruct.NVIC_IRQChannelSubPriority = 0;
   NVIC_InitStruct.NVIC_IRQChannelCmd = ENABLE;
   NVIC_Init(&NVIC_InitStruct);
+
+  NVIC_InitStruct.NVIC_IRQChannel = TIM2_IRQn;
+  NVIC_InitStruct.NVIC_IRQChannelPreemptionPriority = 4;
+  NVIC_InitStruct.NVIC_IRQChannelSubPriority = 0;
+  NVIC_InitStruct.NVIC_IRQChannelCmd = ENABLE;
+  NVIC_Init(&NVIC_InitStruct);
+
 }
 /* Main source ---------------------------------------------------------------*/
 int main(void) {
@@ -478,42 +511,10 @@ int main(void) {
       DMA_ClearFlag(DMA1_Stream4, DMA_FLAG_TCIF4);
       DMA_Cmd(DMA1_Stream4, ENABLE);
     }
+  timer_config();
+
     while (1) {
-      if (I2C_GetFlagStatus(I2C3, I2C_FLAG_BUSY) == RESET) {
-        I2C_GenerateSTART(I2C3, ENABLE);
-        while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_MODE_SELECT) == ERROR) {
-          /* Wating for SB bit */
-        }
-        /* For remove EV5 */
-
-        I2C_Send7bitAddress(I2C3, 0b11010000, I2C_Direction_Transmitter);
-        while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED) == ERROR) {
-          /* Waiting for ADDR */
-        }
-        /* Clear ADDR bit */
-
-        I2C_SendData(I2C3, DS1307_REG_TIMEDATE);
-        /* Restart sau khi ghi dia chi muon doc */
-        I2C_GenerateSTART(I2C3, ENABLE);
-        while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_MODE_SELECT) == ERROR) {
-          /* Wating for SB bit */
-        }
-        /* For remove EV5 */
-
-        I2C_Send7bitAddress(I2C3, 0b11010000, I2C_Direction_Receiver);
-        while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_RECEIVER_MODE_SELECTED) == ERROR) {
-          /* Waiting for ADDR */
-        }
-        /* Clear ADDR bit */
-        /* using DMA to receive data */
-        DMA_ClearFlag(DMA1_Stream2, DMA_FLAG_TCIF2);
-        DMA_Cmd(DMA1_Stream2, ENABLE);
-      }
-
-      // // delay_ms(500);
-      // while (DMA_GetFlagStatus(DMA1_Stream6, DMA_FLAG_TCIF6) == RESET) {
-      //   /* Wait until Transmistion complete */
-      // }
+      #if 0
       delay_ms(100);
       if (USART_GetFlagStatus(USART2, USART_FLAG_TC) != RESET) {
         for (uint16_t len = 0; len < strlen((char *)chuoi); len++) {
@@ -539,6 +540,7 @@ int main(void) {
         DMA_ClearFlag(DMA1_Stream6, DMA_FLAG_TCIF6);
         DMA_Cmd(DMA1_Stream6, ENABLE);
       }
+      #endif
     }
   }
   return 0;
@@ -580,4 +582,37 @@ void DMA1_Stream2_IRQHandler(void) {
 void DMA1_Stream4_IRQHandler(void) {
   I2C_GenerateSTOP(I2C3, ENABLE);
   DMA_ClearITPendingBit(DMA1_Stream4, DMA_IT_TCIF4);
+}
+
+void TIM2_IRQHandler(void) {
+  if (TIM_GetITStatus(TIM2, TIM_IT_Update) != RESET) {
+    TIM_ClearITPendingBit(TIM2, TIM_IT_Update);
+    if (I2C_GetFlagStatus(I2C3, I2C_FLAG_BUSY) == RESET) {
+      I2C_GenerateSTART(I2C3, ENABLE);
+      while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_MODE_SELECT) == ERROR) {
+        /* Wating for SB bit */
+      }
+      /* For remove EV5 */
+      I2C_Send7bitAddress(I2C3, 0b11010000, I2C_Direction_Transmitter);
+      while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED) == ERROR) {
+        /* Waiting for ADDR */
+      }
+      /* Clear ADDR bit */
+      I2C_SendData(I2C3, DS1307_REG_TIMEDATE);
+      /* Restart sau khi ghi dia chi muon doc */
+      I2C_GenerateSTART(I2C3, ENABLE);
+      while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_MODE_SELECT) == ERROR) {
+        /* Wating for SB bit */
+      }
+      /* For remove EV5 */
+      I2C_Send7bitAddress(I2C3, 0b11010000, I2C_Direction_Receiver);
+      while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_RECEIVER_MODE_SELECTED) == ERROR) {
+        /* Waiting for ADDR */
+      }
+      /* Clear ADDR bit */
+      /* using DMA to receive data */
+      DMA_ClearFlag(DMA1_Stream2, DMA_FLAG_TCIF2);
+      DMA_Cmd(DMA1_Stream2, ENABLE);
+    }
+  }
 }
