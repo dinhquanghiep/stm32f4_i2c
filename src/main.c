@@ -78,7 +78,6 @@ volatile uint32_t time_ms = 0;
 volatile uint32_t timeout = 0;
 /* Private variables ---------------------------------------------------------*/
 static uint8_t buff_recv[100];
-static uint8_t buff_RC522[100];
 static uint8_t count = 0;
 static uint8_t buff_send[] = "Dinh Quang Hiep\nDinh Quang Hiep\nDinh Quang Hiep\n";
 static uint8_t buffer_count = 0;
@@ -281,6 +280,7 @@ static void gpio_config(void) {
 static void dma_config(void) {
   RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_DMA1, ENABLE);
 
+  /* For USART2 Tx */
   DMA_DeInit(DMA1_Stream6);
   DMA_InitTypeDef DMA_InitStruct;
   DMA_StructInit(&DMA_InitStruct);
@@ -294,14 +294,15 @@ static void dma_config(void) {
   DMA_InitStruct.DMA_PeripheralDataSize = DMA_PeripheralDataSize_Byte;
   DMA_InitStruct.DMA_MemoryDataSize = DMA_MemoryDataSize_Byte;
   DMA_InitStruct.DMA_Mode = DMA_Mode_Normal;
-  DMA_InitStruct.DMA_Priority = DMA_Priority_High;
+  DMA_InitStruct.DMA_Priority = DMA_Priority_Low;
   DMA_InitStruct.DMA_FIFOMode = DMA_FIFOMode_Disable;
   DMA_InitStruct.DMA_FIFOThreshold = DMA_FIFOStatus_1QuarterFull;
   DMA_InitStruct.DMA_MemoryBurst = DMA_MemoryBurst_Single;
   DMA_InitStruct.DMA_PeripheralBurst = DMA_PeripheralBurst_Single;
   DMA_Init(DMA1_Stream6, &DMA_InitStruct);
 
-
+  /* For USART2 Rx */
+  DMA_InitStruct.DMA_Priority = DMA_Priority_VeryHigh;
   DMA_InitStruct.DMA_Mode = DMA_Mode_Circular;
   DMA_InitStruct.DMA_BufferSize = 100;
   DMA_InitStruct.DMA_DIR = DMA_DIR_PeripheralToMemory;
@@ -312,15 +313,6 @@ static void dma_config(void) {
   DMA_Cmd(DMA1_Stream6, ENABLE);
   DMA_Cmd(DMA1_Stream5, ENABLE);
   
-  /* For USART3 RX */
-  DMA_InitStruct.DMA_Channel = DMA_Channel_4;
-  DMA_InitStruct.DMA_Mode = DMA_Mode_Circular;
-  DMA_InitStruct.DMA_BufferSize = 100;
-  DMA_InitStruct.DMA_DIR = DMA_DIR_PeripheralToMemory;
-  DMA_InitStruct.DMA_Memory0BaseAddr = (uint32_t)buff_RC522;
-  DMA_Init(DMA1_Stream1, &DMA_InitStruct);
-  DMA_Cmd(DMA1_Stream1, ENABLE);
-
   /* For I2C3 Tx */
   DMA_InitStruct.DMA_Channel = DMA_Channel_3;
   DMA_InitStruct.DMA_PeripheralBaseAddr = I2C3_BASE + 0x10;
@@ -332,14 +324,13 @@ static void dma_config(void) {
   DMA_InitStruct.DMA_PeripheralDataSize = DMA_PeripheralDataSize_Byte;
   DMA_InitStruct.DMA_MemoryDataSize = DMA_MemoryDataSize_Byte;
   DMA_InitStruct.DMA_Mode = DMA_Mode_Normal;
-  DMA_InitStruct.DMA_Priority = DMA_Priority_High;
+  DMA_InitStruct.DMA_Priority = DMA_Priority_Low;
   DMA_InitStruct.DMA_FIFOMode = DMA_FIFOMode_Disable;
   DMA_InitStruct.DMA_FIFOThreshold = DMA_FIFOStatus_1QuarterFull;
   DMA_InitStruct.DMA_MemoryBurst = DMA_MemoryBurst_Single;
   DMA_InitStruct.DMA_PeripheralBurst = DMA_PeripheralBurst_Single;
   DMA_Init(DMA1_Stream4, &DMA_InitStruct);
-  // DMA_ITConfig(DMA1_Stream4, DMA_IT_TC, ENABLE);
-
+  DMA_ITConfig(DMA1_Stream4, DMA_IT_TC, ENABLE);
 
   /* For I2C3 Rx */
   DMA_InitStruct.DMA_Channel = DMA_Channel_3;
@@ -358,7 +349,7 @@ static void dma_config(void) {
   DMA_InitStruct.DMA_MemoryBurst = DMA_MemoryBurst_Single;
   DMA_InitStruct.DMA_PeripheralBurst = DMA_PeripheralBurst_Single;
   DMA_Init(DMA1_Stream2, &DMA_InitStruct);
-  // DMA_ITConfig(DMA1_Stream2, DMA_IT_TC, ENABLE);
+  DMA_ITConfig(DMA1_Stream2, DMA_IT_TC, ENABLE);
 }
 
 /** @brief  Config the UASRT2
@@ -384,9 +375,9 @@ static void usart_config(void) {
   USART_Cmd(USART2, ENABLE);
   USART_DMACmd(USART2, USART_DMAReq_Tx | USART_DMAReq_Rx, ENABLE);
   
-  RCC_APB1PeriphClockCmd(RCC_APB1Periph_USART3, ENABLE);
-  USART_Init(USART3, &USART_InitStruct);
-  USART_DMACmd(USART3, USART_DMAReq_Rx, ENABLE);
+  // RCC_APB1PeriphClockCmd(RCC_APB1Periph_USART3, ENABLE);
+  // USART_Init(USART3, &USART_InitStruct);
+  // USART_DMACmd(USART3, USART_DMAReq_Rx, ENABLE);
 }
 
 /** @brief  Config the I2C
@@ -427,6 +418,18 @@ static void nvic_config(void) {
 
   NVIC_InitStruct.NVIC_IRQChannel = DMA1_Stream6_IRQn;
   NVIC_InitStruct.NVIC_IRQChannelPreemptionPriority = 1;
+  NVIC_InitStruct.NVIC_IRQChannelSubPriority = 0;
+  NVIC_InitStruct.NVIC_IRQChannelCmd = ENABLE;
+  NVIC_Init(&NVIC_InitStruct);
+
+  NVIC_InitStruct.NVIC_IRQChannel = DMA1_Stream2_IRQn;
+  NVIC_InitStruct.NVIC_IRQChannelPreemptionPriority = 2;
+  NVIC_InitStruct.NVIC_IRQChannelSubPriority = 0;
+  NVIC_InitStruct.NVIC_IRQChannelCmd = ENABLE;
+  NVIC_Init(&NVIC_InitStruct);
+
+  NVIC_InitStruct.NVIC_IRQChannel = DMA1_Stream4_IRQn;
+  NVIC_InitStruct.NVIC_IRQChannelPreemptionPriority = 3;
   NVIC_InitStruct.NVIC_IRQChannelSubPriority = 0;
   NVIC_InitStruct.NVIC_IRQChannelCmd = ENABLE;
   NVIC_Init(&NVIC_InitStruct);
@@ -474,18 +477,6 @@ int main(void) {
       /* use DMA */
       DMA_ClearFlag(DMA1_Stream4, DMA_FLAG_TCIF4);
       DMA_Cmd(DMA1_Stream4, ENABLE);
-      while (DMA_GetFlagStatus(DMA1_Stream4, DMA_FLAG_TCIF4) == RESET) {
-        /* waiting for DMA transfer */
-      }
-  #if 0
-      for (uint8_t tmp = 0; tmp < sizeof(rtc_data); tmp++) {
-        I2C_SendData(I2C3, rtc_data[tmp]);
-        while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_BYTE_TRANSMITTED) == ERROR) {
-          /* Wait until byte transmitted */
-        }
-      }
-  #endif 
-      I2C_GenerateSTOP(I2C3, ENABLE);
     }
     while (1) {
       if (I2C_GetFlagStatus(I2C3, I2C_FLAG_BUSY) == RESET) {
@@ -514,101 +505,41 @@ int main(void) {
           /* Waiting for ADDR */
         }
         /* Clear ADDR bit */
-  #if 1
         /* using DMA to receive data */
         DMA_ClearFlag(DMA1_Stream2, DMA_FLAG_TCIF2);
         DMA_Cmd(DMA1_Stream2, ENABLE);
-        while (DMA_GetFlagStatus(DMA1_Stream2, DMA_FLAG_TCIF2) == RESET) {
-          /* waiting for DMA transfer */
-        }
-  #endif
-  #if 0
-        for (uint8_t tmp = 0; tmp < sizeof(rtc_data_recv); tmp++) {
-          while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_BYTE_RECEIVED) == ERROR) {
-            /* Wait until receive byte data */
+      }
+
+      // // delay_ms(500);
+      // while (DMA_GetFlagStatus(DMA1_Stream6, DMA_FLAG_TCIF6) == RESET) {
+      //   /* Wait until Transmistion complete */
+      // }
+      delay_ms(100);
+      if (USART_GetFlagStatus(USART2, USART_FLAG_TC) != RESET) {
+        for (uint16_t len = 0; len < strlen((char *)chuoi); len++) {
+          while (USART_GetFlagStatus(USART2, USART_FLAG_TXE) == RESET) {
+            /* Wait until Transmistion complete */
           }
-          rtc_data_recv[tmp] = I2C_ReceiveData(I2C3);
-
+          USART_SendData(USART2, chuoi[len]);
         }
-  #endif
-  #if 0
-        while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_BYTE_RECEIVED) == ERROR) {
-          /* Wait until receive byte data */
-        }
-        second = I2C_ReceiveData(I2C3);
-
-        while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_BYTE_RECEIVED) == ERROR) {
-          /* Wait until receive byte data */
-        }
-        minute = I2C_ReceiveData(I2C3);
-
-        while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_BYTE_RECEIVED) == ERROR) {
-          /* Wait until receive byte data */
-        }
-        hour = I2C_ReceiveData(I2C3);
-
-        while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_BYTE_RECEIVED) == ERROR) {
-          /* Wait until receive byte data */
-        }
-        day = I2C_ReceiveData(I2C3);
-
-        while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_BYTE_RECEIVED) == ERROR) {
-          /* Wait until receive byte data */
-        }
-        date = I2C_ReceiveData(I2C3);
-
-        while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_BYTE_RECEIVED) == ERROR) {
-          /* Wait until receive byte data */
-        }
-        month = I2C_ReceiveData(I2C3);
-
-        I2C_AcknowledgeConfig(I2C3, DISABLE);
-        I2C_NACKPositionConfig(I2C3, I2C_NACKPosition_Current);
-
-        while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_BYTE_RECEIVED) == ERROR) {
-          /* Wait until receive byte data */
-        }
-        year = I2C_ReceiveData(I2C3);
-        I2C_AcknowledgeConfig(I2C3, ENABLE);
-  #endif
-        I2C_GenerateSTOP(I2C3, ENABLE);
+      }
+      GPIO_ToggleBits(GPIOD, LED_BLUE);
+      delay_ms(100);
+      // delay_us(500000);
+      if (USART_GetFlagStatus(USART2, USART_FLAG_TC) != RESET) {
+        DMA1_Stream6->M0AR = (uint32_t)buff_send;
+        DMA1_Stream6->NDTR = strlen((char *)buff_send);
+        DMA_ClearFlag(DMA1_Stream6, DMA_FLAG_TCIF6);
+        DMA_Cmd(DMA1_Stream6, ENABLE);
+      }
+      delay_ms(100);
+      if (USART_GetFlagStatus(USART2, USART_FLAG_TC) != RESET) {
+        DMA1_Stream6->M0AR = (uint32_t)"Toi ten la dinh quang hiep";
+        DMA1_Stream6->NDTR = (uint32_t)strlen("Toi ten la dinh quang hiep");
+        DMA_ClearFlag(DMA1_Stream6, DMA_FLAG_TCIF6);
+        DMA_Cmd(DMA1_Stream6, ENABLE);
       }
     }
-  }
-  while (0) {
-    // // delay_ms(500);
-    // while (DMA_GetFlagStatus(DMA1_Stream6, DMA_FLAG_TCIF6) == RESET) {
-    //   /* Wait until Transmistion complete */
-    // }
-    delay_ms(500);
-    if (USART_GetFlagStatus(USART2, USART_FLAG_TC) != RESET) {
-      for (uint16_t len = 0; len < strlen((char *)chuoi); len++) {
-        while (USART_GetFlagStatus(USART2, USART_FLAG_TXE) == RESET) {
-          /* Wait until Transmistion complete */
-        }
-        USART_SendData(USART2, chuoi[len]);
-      }
-    }
-    buff_recv[count++] = USART_ReceiveData(USART2);
-    GPIO_ToggleBits(GPIOD, LED_BLUE);
-    delay_ms(500);
-    // delay_us(500000);
-    if (USART_GetFlagStatus(USART2, USART_FLAG_TC) != RESET) {
-      DMA1_Stream6->M0AR = (uint32_t)buff_send;
-      DMA1_Stream6->NDTR = strlen((char *)buff_send);
-      DMA_ClearFlag(DMA1_Stream6, DMA_FLAG_TCIF6);
-      DMA_Cmd(DMA1_Stream6, ENABLE);
-    }
-    delay_ms(500);
-    if (USART_GetFlagStatus(USART2, USART_FLAG_TC) != RESET) {
-      DMA1_Stream6->M0AR = (uint32_t)"Toi ten la dinh quang hiep";
-      DMA1_Stream6->NDTR = (uint32_t)strlen("Toi ten la dinh quang hiep");
-      DMA_ClearFlag(DMA1_Stream6, DMA_FLAG_TCIF6);
-      DMA_Cmd(DMA1_Stream6, ENABLE);
-    }
-  }
-  while (1) {
-
   }
   return 0;
 }
@@ -639,4 +570,14 @@ void USART2_IRQHandler(void) {
       buffer_count = 0;
     }
   }
+}
+
+void DMA1_Stream2_IRQHandler(void) {
+  I2C_GenerateSTOP(I2C3, ENABLE);
+  DMA_ClearITPendingBit(DMA1_Stream2, DMA_IT_TCIF2);
+}
+
+void DMA1_Stream4_IRQHandler(void) {
+  I2C_GenerateSTOP(I2C3, ENABLE);
+  DMA_ClearITPendingBit(DMA1_Stream4, DMA_IT_TCIF4);
 }
