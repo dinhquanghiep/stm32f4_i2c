@@ -24,7 +24,6 @@
 #include <stm32f4xx_dma.h>
 #include <stm32f4xx_usart.h>
 #include <stm32f4xx_i2c.h>
-// #include <mfrc522.h>
 #include <misc.h>
 #include <string.h>
 #if defined (__GNUC__)
@@ -76,12 +75,21 @@ enum DS1307SquareWaveOut
 /* Private typedef -----------------------------------------------------------*/
 /* Public variables ----------------------------------------------------------*/
 volatile uint32_t time_ms = 0;
+volatile uint32_t timeout = 0;
 /* Private variables ---------------------------------------------------------*/
 static uint8_t buff_recv[100];
 static uint8_t buff_RC522[100];
 static uint8_t count = 0;
 static uint8_t buff_send[] = "Dinh Quang Hiep\nDinh Quang Hiep\nDinh Quang Hiep\n";
 static uint8_t buffer_count = 0;
+uint8_t rtc_data[] = {0x22, /* Second */
+                      0x22, /* Minute */
+                      0x06, /* Hour */
+                      0x01, /* Day */
+                      0x22, /* Date */
+                      0x10, /* Month */
+                      0x18};/* Year */
+uint8_t rtc_data_recv[7];
 static volatile uint8_t second;
 static volatile uint8_t minute;
 static volatile uint8_t hour;
@@ -312,6 +320,45 @@ static void dma_config(void) {
   DMA_InitStruct.DMA_Memory0BaseAddr = (uint32_t)buff_RC522;
   DMA_Init(DMA1_Stream1, &DMA_InitStruct);
   DMA_Cmd(DMA1_Stream1, ENABLE);
+
+  /* For I2C3 Tx */
+  DMA_InitStruct.DMA_Channel = DMA_Channel_3;
+  DMA_InitStruct.DMA_PeripheralBaseAddr = I2C3_BASE + 0x10;
+  DMA_InitStruct.DMA_Memory0BaseAddr = (uint32_t)rtc_data;
+  DMA_InitStruct.DMA_DIR = DMA_DIR_MemoryToPeripheral;
+  DMA_InitStruct.DMA_BufferSize = sizeof(rtc_data);
+  DMA_InitStruct.DMA_PeripheralInc = DMA_PeripheralInc_Disable;
+  DMA_InitStruct.DMA_MemoryInc = DMA_MemoryInc_Enable;
+  DMA_InitStruct.DMA_PeripheralDataSize = DMA_PeripheralDataSize_Byte;
+  DMA_InitStruct.DMA_MemoryDataSize = DMA_MemoryDataSize_Byte;
+  DMA_InitStruct.DMA_Mode = DMA_Mode_Normal;
+  DMA_InitStruct.DMA_Priority = DMA_Priority_High;
+  DMA_InitStruct.DMA_FIFOMode = DMA_FIFOMode_Disable;
+  DMA_InitStruct.DMA_FIFOThreshold = DMA_FIFOStatus_1QuarterFull;
+  DMA_InitStruct.DMA_MemoryBurst = DMA_MemoryBurst_Single;
+  DMA_InitStruct.DMA_PeripheralBurst = DMA_PeripheralBurst_Single;
+  DMA_Init(DMA1_Stream4, &DMA_InitStruct);
+  // DMA_ITConfig(DMA1_Stream4, DMA_IT_TC, ENABLE);
+
+
+  /* For I2C3 Rx */
+  DMA_InitStruct.DMA_Channel = DMA_Channel_3;
+  DMA_InitStruct.DMA_PeripheralBaseAddr = I2C3_BASE + 0x10;
+  DMA_InitStruct.DMA_Memory0BaseAddr = (uint32_t)rtc_data_recv;
+  DMA_InitStruct.DMA_DIR = DMA_DIR_PeripheralToMemory;
+  DMA_InitStruct.DMA_BufferSize = sizeof(rtc_data_recv);
+  DMA_InitStruct.DMA_PeripheralInc = DMA_PeripheralInc_Disable;
+  DMA_InitStruct.DMA_MemoryInc = DMA_MemoryInc_Enable;
+  DMA_InitStruct.DMA_PeripheralDataSize = DMA_PeripheralDataSize_Byte;
+  DMA_InitStruct.DMA_MemoryDataSize = DMA_MemoryDataSize_Byte;
+  DMA_InitStruct.DMA_Mode = DMA_Mode_Normal;
+  DMA_InitStruct.DMA_Priority = DMA_Priority_High;
+  DMA_InitStruct.DMA_FIFOMode = DMA_FIFOMode_Disable;
+  DMA_InitStruct.DMA_FIFOThreshold = DMA_FIFOStatus_1QuarterFull;
+  DMA_InitStruct.DMA_MemoryBurst = DMA_MemoryBurst_Single;
+  DMA_InitStruct.DMA_PeripheralBurst = DMA_PeripheralBurst_Single;
+  DMA_Init(DMA1_Stream2, &DMA_InitStruct);
+  // DMA_ITConfig(DMA1_Stream2, DMA_IT_TC, ENABLE);
 }
 
 /** @brief  Config the UASRT2
@@ -359,6 +406,10 @@ static void i2c_config(void) {
   I2C_InitStruct.I2C_AcknowledgedAddress = I2C_AcknowledgedAddress_7bit;
   I2C_Init(I2C3, &I2C_InitStruct);
   I2C_Cmd(I2C3, ENABLE);
+
+  I2C_DMALastTransferCmd(I2C3, ENABLE);
+  I2C_DMACmd(I2C3, ENABLE);
+
 }
 
 /** @brief  Config the NVIC
@@ -392,133 +443,136 @@ int main(void) {
 "    + nhap vao ki tu, ket thuc bang dau cham\n";
 /* Toc do baud 115200 truye chuoi tren mat 12ms */
   while (1) {
-    I2C_GenerateSTART(I2C3, ENABLE);
-    while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_MODE_SELECT) == ERROR) {
-      /* Wating for SB bit */
-    }
-    /* For remove EV5 */
-    I2C_GetFlagStatus(I2C3, I2C_FLAG_SB);
-
-    I2C_Send7bitAddress(I2C3, 0b11010000, I2C_Direction_Transmitter);
-    while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED) == ERROR) {
-      /* Waiting for ADDR */
-    }
-    /* Clear ADDR bit */
-    I2C_GetFlagStatus(I2C3, I2C_FLAG_ADDR);
-
-    I2C_SendData(I2C3, DS1307_REG_TIMEDATE);
-    while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_BYTE_TRANSMITTED) == ERROR) {
-      /* Wait until byte transmitted */
-    }
-
-    I2C_SendData(I2C3, 0x11);
-    while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_BYTE_TRANSMITTED) == ERROR) {
-      /* Wait until byte transmitted */
-    }
-
-    I2C_SendData(I2C3, 0x11);
-    while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_BYTE_TRANSMITTED) == ERROR) {
-      /* Wait until byte transmitted */
-    }
-    
-    I2C_SendData(I2C3, 0x11);
-    while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_BYTE_TRANSMITTED) == ERROR) {
-      /* Wait until byte transmitted */
-    }
-
-    I2C_SendData(I2C3, 0x05);
-    while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_BYTE_TRANSMITTED) == ERROR) {
-      /* Wait until byte transmitted */
-    }
-    
-    I2C_SendData(I2C3, 0x11);
-    while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_BYTE_TRANSMITTED) == ERROR) {
-      /* Wait until byte transmitted */
-    }
-
-    I2C_SendData(I2C3, 0x11);
-    while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_BYTE_TRANSMITTED) == ERROR) {
-      /* Wait until byte transmitted */
-    }
-
-    I2C_SendData(I2C3, 0x18);
-    while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_BYTE_TRANSMITTED) == ERROR) {
-      /* Wait until byte transmitted */
-    }
-    I2C_GenerateSTOP(I2C3, ENABLE);
-    delay_ms(10);
-    while (1) {
-
+    if (I2C_GetFlagStatus(I2C3, I2C_FLAG_BUSY) == RESET) {
       I2C_GenerateSTART(I2C3, ENABLE);
-      while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_MODE_SELECT) == ERROR) {
+      timeout = 1000; /* Timeout = 1000ms */
+      while ((I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_MODE_SELECT) == ERROR) && timeout) {
         /* Wating for SB bit */
       }
+      if (!timeout) {
+        if (USART_GetFlagStatus(USART2, USART_FLAG_TC) != RESET) {
+          for (uint16_t len = 0; len < strlen("Loi I2C, khong the ket noi"); len++) {
+            while (USART_GetFlagStatus(USART2, USART_FLAG_TXE) == RESET) {
+              /* Wait until Transmistion complete */
+            }
+            USART_SendData(USART2, len["Loi I2C, khong the ket noi"]);
+          }
+        }
+      }
       /* For remove EV5 */
-      I2C_GetFlagStatus(I2C3, I2C_FLAG_SB);
-
       I2C_Send7bitAddress(I2C3, 0b11010000, I2C_Direction_Transmitter);
-      while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED) == ERROR) {
+      timeout = 1000; /* Timeout = 1000ms */
+      while ((I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED) == ERROR) && timeout) {
         /* Waiting for ADDR */
       }
       /* Clear ADDR bit */
-      I2C_GetFlagStatus(I2C3, I2C_FLAG_ADDR);
-
       I2C_SendData(I2C3, DS1307_REG_TIMEDATE);
-
-      I2C_GenerateSTART(I2C3, ENABLE);
-      while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_MODE_SELECT) == ERROR) {
-        /* Wating for SB bit */
+      timeout = 1000;
+      while ((I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_BYTE_TRANSMITTED) == ERROR) && timeout) {
+        /* Wait until byte transmitted */
       }
-      /* For remove EV5 */
-      I2C_GetFlagStatus(I2C3, I2C_FLAG_SB);
-
-      I2C_Send7bitAddress(I2C3, 0b11010000, I2C_Direction_Receiver);
-      while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_RECEIVER_MODE_SELECTED) == ERROR) {
-        /* Waiting for ADDR */
+      /* use DMA */
+      DMA_ClearFlag(DMA1_Stream4, DMA_FLAG_TCIF4);
+      DMA_Cmd(DMA1_Stream4, ENABLE);
+      while (DMA_GetFlagStatus(DMA1_Stream4, DMA_FLAG_TCIF4) == RESET) {
+        /* waiting for DMA transfer */
       }
-      /* Clear ADDR bit */
-      I2C_GetFlagStatus(I2C3, I2C_FLAG_ADDR);
-
-      while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_BYTE_RECEIVED) == ERROR) {
-        /* Wait until receive byte data */
+  #if 0
+      for (uint8_t tmp = 0; tmp < sizeof(rtc_data); tmp++) {
+        I2C_SendData(I2C3, rtc_data[tmp]);
+        while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_BYTE_TRANSMITTED) == ERROR) {
+          /* Wait until byte transmitted */
+        }
       }
-      second = I2C_ReceiveData(I2C3);
-
-      while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_BYTE_RECEIVED) == ERROR) {
-        /* Wait until receive byte data */
-      }
-      minute = I2C_ReceiveData(I2C3);
-
-      while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_BYTE_RECEIVED) == ERROR) {
-        /* Wait until receive byte data */
-      }
-      hour = I2C_ReceiveData(I2C3);
-
-      while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_BYTE_RECEIVED) == ERROR) {
-        /* Wait until receive byte data */
-      }
-      day = I2C_ReceiveData(I2C3);
-
-      while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_BYTE_RECEIVED) == ERROR) {
-        /* Wait until receive byte data */
-      }
-      date = I2C_ReceiveData(I2C3);
-
-      while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_BYTE_RECEIVED) == ERROR) {
-        /* Wait until receive byte data */
-      }
-      month = I2C_ReceiveData(I2C3);
-
-      I2C_AcknowledgeConfig(I2C3, DISABLE);
-      I2C_NACKPositionConfig(I2C3, I2C_NACKPosition_Current);
-
-      while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_BYTE_RECEIVED) == ERROR) {
-        /* Wait until receive byte data */
-      }
-      year = I2C_ReceiveData(I2C3);
-      I2C_AcknowledgeConfig(I2C3, ENABLE);
+  #endif 
       I2C_GenerateSTOP(I2C3, ENABLE);
+    }
+    while (1) {
+      if (I2C_GetFlagStatus(I2C3, I2C_FLAG_BUSY) == RESET) {
+        I2C_GenerateSTART(I2C3, ENABLE);
+        while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_MODE_SELECT) == ERROR) {
+          /* Wating for SB bit */
+        }
+        /* For remove EV5 */
 
+        I2C_Send7bitAddress(I2C3, 0b11010000, I2C_Direction_Transmitter);
+        while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED) == ERROR) {
+          /* Waiting for ADDR */
+        }
+        /* Clear ADDR bit */
+
+        I2C_SendData(I2C3, DS1307_REG_TIMEDATE);
+        /* Restart sau khi ghi dia chi muon doc */
+        I2C_GenerateSTART(I2C3, ENABLE);
+        while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_MODE_SELECT) == ERROR) {
+          /* Wating for SB bit */
+        }
+        /* For remove EV5 */
+
+        I2C_Send7bitAddress(I2C3, 0b11010000, I2C_Direction_Receiver);
+        while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_RECEIVER_MODE_SELECTED) == ERROR) {
+          /* Waiting for ADDR */
+        }
+        /* Clear ADDR bit */
+  #if 1
+        /* using DMA to receive data */
+        DMA_ClearFlag(DMA1_Stream2, DMA_FLAG_TCIF2);
+        DMA_Cmd(DMA1_Stream2, ENABLE);
+        while (DMA_GetFlagStatus(DMA1_Stream2, DMA_FLAG_TCIF2) == RESET) {
+          /* waiting for DMA transfer */
+        }
+  #endif
+  #if 0
+        for (uint8_t tmp = 0; tmp < sizeof(rtc_data_recv); tmp++) {
+          while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_BYTE_RECEIVED) == ERROR) {
+            /* Wait until receive byte data */
+          }
+          rtc_data_recv[tmp] = I2C_ReceiveData(I2C3);
+
+        }
+  #endif
+  #if 0
+        while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_BYTE_RECEIVED) == ERROR) {
+          /* Wait until receive byte data */
+        }
+        second = I2C_ReceiveData(I2C3);
+
+        while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_BYTE_RECEIVED) == ERROR) {
+          /* Wait until receive byte data */
+        }
+        minute = I2C_ReceiveData(I2C3);
+
+        while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_BYTE_RECEIVED) == ERROR) {
+          /* Wait until receive byte data */
+        }
+        hour = I2C_ReceiveData(I2C3);
+
+        while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_BYTE_RECEIVED) == ERROR) {
+          /* Wait until receive byte data */
+        }
+        day = I2C_ReceiveData(I2C3);
+
+        while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_BYTE_RECEIVED) == ERROR) {
+          /* Wait until receive byte data */
+        }
+        date = I2C_ReceiveData(I2C3);
+
+        while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_BYTE_RECEIVED) == ERROR) {
+          /* Wait until receive byte data */
+        }
+        month = I2C_ReceiveData(I2C3);
+
+        I2C_AcknowledgeConfig(I2C3, DISABLE);
+        I2C_NACKPositionConfig(I2C3, I2C_NACKPosition_Current);
+
+        while (I2C_CheckEvent(I2C3, I2C_EVENT_MASTER_BYTE_RECEIVED) == ERROR) {
+          /* Wait until receive byte data */
+        }
+        year = I2C_ReceiveData(I2C3);
+        I2C_AcknowledgeConfig(I2C3, ENABLE);
+  #endif
+        I2C_GenerateSTOP(I2C3, ENABLE);
+      }
     }
   }
   while (0) {

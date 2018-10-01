@@ -35,6 +35,7 @@
   * @{
   */
 extern volatile uint32_t time_ms;
+extern volatile uint32_t timeout;
 /* Private typedef -----------------------------------------------------------*/
 /* Private define ------------------------------------------------------------*/
 /* Private macro -------------------------------------------------------------*/
@@ -143,6 +144,9 @@ void SysTick_Handler(void)
 {
   // TimingDelay_Decrement();
   time_ms++;
+  if (timeout != 0) {
+    timeout--;
+  }
 }
 
 /******************************************************************************/
